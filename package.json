@@ -1,0 +1,12 @@
+{
+  "name": "com.naraenda.perfhammer",
+  "version": "1.0.0",
+  "displayName": "PefHammer",
+  "description": "Hammers your assets to be more performant",
+  "unity": "2019.4",
+  "dependencies": {
+    "com.whinarn.unitymeshsimplifier": "3.0.1",
+    "com.unity.formats.fbx": "4.1.2"
+  },
+  "type": "tool"
+}
