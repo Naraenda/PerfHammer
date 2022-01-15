@@ -4,13 +4,11 @@ using UnityEngine;
 
 namespace PerfHammer
 {
-    public interface Module
+    public interface IModule
     {
-        public string Name { get; }
+        string Name { get; }
 
-        public void OnGUI();
-
-        public GameObject Run(Exporter e, GameObject obj);
+        GameObject Run(Exporter e, GameObject obj);
     }
 }
 

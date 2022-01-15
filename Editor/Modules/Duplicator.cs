@@ -4,31 +4,34 @@ using UnityEngine;
 
 namespace PerfHammer
 {
-    public static class Duplicator
+    public class Duplicator : IModule
     {
+        public string Name => "Duplicator";
+
+        public void OnGUI() { }
+
         /// <summary>
         /// Copies the gameobject and duplicates the contained meshes
         /// </summary>
-        public static GameObject Duplicate(GameObject go, string name) {
-            var copy = Object.Instantiate(go);
-            copy.name = name;
+        public GameObject Run(Exporter e, GameObject obj) {
+            var copy = Object.Instantiate(obj);
 
-            var sms = go.GetComponentsInChildren<SkinnedMeshRenderer>();
-            var mfs = go.GetComponentsInChildren<MeshFilter>();
+            var sms = copy.GetComponentsInChildren<SkinnedMeshRenderer>();
+            var mfs = copy.GetComponentsInChildren<MeshFilter>();
             var replacements = new Dictionary<Mesh, Mesh>();
 
             // Skined meshes
             foreach (var r in sms) {
                 if (!replacements.ContainsKey(r.sharedMesh))
-                    replacements.Add(r.sharedMesh, Mesh.Instantiate(r.sharedMesh));
-
+                    replacements.Add(r.sharedMesh, Object.Instantiate(r.sharedMesh));
+                
                 r.sharedMesh = replacements[r.sharedMesh];
             }
 
             // Mesh filters (rigid meshes)
             foreach (var r in mfs) {
                 if (!replacements.ContainsKey(r.sharedMesh))
-                    replacements.Add(r.sharedMesh, Mesh.Instantiate(r.sharedMesh));
+                    replacements.Add(r.sharedMesh, Object.Instantiate(r.sharedMesh));
 
                 r.sharedMesh = replacements[r.sharedMesh];
             }

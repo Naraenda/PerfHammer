@@ -16,11 +16,31 @@ public class PerfHammerWindow : EditorWindow
 
     GameObject _selectedObject;
 
-    Atlasser.Configuration _config = new Atlasser.Configuration();
+    // ======= //
+    // Modules //
+    // ======= //
 
-    Vector2 _scrollPosition = Vector2.zero;
-    bool _isMaterialInputShown = true;
-    bool _isMaterialOutputShown = true;
+    OptimizationFlow _flow;
+    Atlasser Atlasser => _flow.Get<Atlasser>();
+    Decimator Decimator => _flow.Get<Decimator>();
+    BlendShapeCleaner BlendShapes => _flow.Get<BlendShapeCleaner>();
+
+    // ======== //
+    // UI State //
+    // ======== //
+
+    private Vector2 _scrollPosition = Vector2.zero;
+    private bool _isMaterialInputShown   = true;
+    private bool _isMaterialOutputShown  = true;
+    private bool _isObjectSelectionShown = true;
+    private bool _isBlendShapesShown     = true;
+    private bool _isDecimationShown      = true;
+
+    private string _assetPath = "";
+    private string _assetDir  = "";
+    private string _assetName = "";
+    private string _outputDir = "";
+    private bool   _isFbxFile = false;
 
     [MenuItem("Window/Nara/PerfHammer", false, 900000)]
     public static void ShowWindow() {
@@ -33,47 +53,47 @@ public class PerfHammerWindow : EditorWindow
     }
 
     void OnGUI() {
+        _flow = _flow ?? new OptimizationFlow();
+
         var property_preset_names = Atlasser.ShaderPropertyFallback.Keys.ToArray();
 
         _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
 
-        _selectedObject = (GameObject)EditorGUILayout.ObjectField( $"Selected Object", _selectedObject, typeof(GameObject), true);
-        
-        if (GUILayout.Button("Select from scene")) {
-            _selectedObject = Selection.activeObject as GameObject;
-            _config = new Atlasser.Configuration();
+        // ================ //
+        // Object Selection //
+        // ================ //
+
+        CustomUI.Section("Object Selection", ref _isObjectSelectionShown, () =>
+        {
+            _selectedObject = (GameObject)EditorGUILayout.ObjectField($"Selected Object", _selectedObject, typeof(GameObject), true);
+            if (GUILayout.Button("Select from scene")) {
+                _selectedObject = Selection.activeObject as GameObject;
+                _flow = new OptimizationFlow();
+                if (_selectedObject) {
+                    Atlasser.DiscoverMaterials(_selectedObject);
+                    Atlasser.AutoFillProperty("_MainTex");
+                    Atlasser.AutoFill();
+                }
+            }
+
             if (_selectedObject) {
-                _config.DiscoverMaterials(_selectedObject);
-                _config.AutoFillProperty("_MainTex");
-                _config.AutoFill();
-            }
-        }
-
-        string assetPath = "Assets";
-        string assetDir  = "Assets";
-        string assetName = "UnnamedAsset";
-        if (_selectedObject) {
-            assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(_selectedObject);
-            if (assetPath == "") {
-                assetPath = "Assets";
+                _assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(_selectedObject);
+                if (_assetPath != "") {
+                    _assetDir  = Path.GetDirectoryName(_assetPath);
+                    _assetName = _selectedObject.name;
+                }
+                _outputDir = $"{_assetDir}/OptimizedModels/{_assetName}/";
+                _isFbxFile = Path.GetExtension(_assetPath) == ".fbx";
             } else {
-                assetDir  = Path.GetDirectoryName(assetPath);
-                assetName = _selectedObject.name;
+                _isFbxFile = false;
             }
-        }
-        string outputDir = $"{assetDir}/OptimizedModels/{assetName}/";
-        bool isFbxFile = Path.GetExtension(assetPath) == ".fbx";
 
-        if (!isFbxFile) {
-            EditorGUILayout.HelpBox($"No FBX file selected!", MessageType.Error);
-        } else {
-            EditorGUILayout.HelpBox($"Will generate files under {outputDir}_*", MessageType.Info);
-        }
-
-        
-        GUILayout.Space(5);
-        EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
-        GUILayout.Space(5);
+            if (!_isFbxFile) {
+                EditorGUILayout.HelpBox($"No FBX file selected!", MessageType.Error);
+            } else {
+                EditorGUILayout.HelpBox($"Will generate files under {_outputDir}_*", MessageType.Info);
+            }
+        });
 
         // ============== //
         // Material Input //
@@ -81,14 +101,16 @@ public class PerfHammerWindow : EditorWindow
 
         CustomUI.Section("Material Input", ref _isMaterialInputShown, () => {
             if (GUILayout.Button("Refresh materials")) {
-                _config.DiscoverMaterials(_selectedObject);
+                Atlasser.DiscoverMaterials(_selectedObject);
             }
             GUILayout.Space(5);
 
+
+            // Display UI for each Atlas
             EditorGUI.indentLevel++;
             Stack<int> removedAtlasIndices = new Stack<int>();
-            for (int a_i = 0; a_i < _config.Atlasses.Count; a_i++) {
-                var a = _config.Atlasses[a_i];
+            for (int a_i = 0; a_i < Atlasser.Atlasses.Count; a_i++) {
+                var a = Atlasser.Atlasses[a_i];
                 if (a_i > 0) {
                     GUILayout.Space(5);
                     EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
@@ -125,10 +147,10 @@ public class PerfHammerWindow : EditorWindow
                 }
 
                 // Update
-                _config.Atlasses[a_i] = a;
+                Atlasser.Atlasses[a_i] = a;
 
                 if (GUILayout.Button("Auto-fill")) {
-                    _config.AutoFillProperty(a.PropertyName);
+                    Atlasser.AutoFillProperty(a.PropertyName);
                 }
 
                 EditorGUILayout.EndVertical();
@@ -140,12 +162,12 @@ public class PerfHammerWindow : EditorWindow
 
             }
             foreach (var index in removedAtlasIndices) {
-                _config.Atlasses.RemoveAt(index);
+                Atlasser.Atlasses.RemoveAt(index);
             }
 
             EditorGUI.indentLevel--;
             if (GUILayout.Button("Add atlas")) {
-                _config.AddAtlas();
+                Atlasser.AddAtlas();
             }
         });
 
@@ -154,9 +176,11 @@ public class PerfHammerWindow : EditorWindow
         // =============== //
 
         CustomUI.Section("Material Output", ref _isMaterialOutputShown, () => {
+
+            // Display UI for each output group
             EditorGUI.indentLevel++;
-            for (int g_i = 0; g_i < _config.Groups.Count; g_i++) {
-                var g = _config.Groups[g_i];
+            for (int g_i = 0; g_i < Atlasser.Groups.Count; g_i++) {
+                var g = Atlasser.Groups[g_i];
                 if (g_i > 0) {
                     GUILayout.Space(5);
                     EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
@@ -196,12 +220,12 @@ public class PerfHammerWindow : EditorWindow
 
                     EditorGUI.BeginDisabledGroup(g_i == 0);
                     if (GUILayout.Button("Up")) {
-                        _config.MoveMaterial(material, g_i - 1);
+                        Atlasser.MoveMaterial(material, g_i - 1);
                     }
                     EditorGUI.EndDisabledGroup();
 
                     if (GUILayout.Button("Down")) {
-                        _config.MoveMaterial(material, g_i + 1);
+                        Atlasser.MoveMaterial(material, g_i + 1);
                     }
                     EditorGUILayout.EndHorizontal();
                 }
@@ -212,19 +236,58 @@ public class PerfHammerWindow : EditorWindow
             EditorGUI.indentLevel--;
         });
 
-        GUILayout.Space(5);
-        EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
-        GUILayout.Space(5);
+        // ========= //
+        // ShapeKeys //
+        // ========= //
 
-        EditorGUI.BeginDisabledGroup(!isFbxFile);
+        CustomUI.Section("Blend Shapes", ref _isBlendShapesShown, () => {
+            EditorGUILayout.HelpBox("Blendshape cleaning is currently disabled.", MessageType.Warning);
+
+            EditorGUI.BeginDisabledGroup(true);
+            BlendShapes.ApplyNonZero   = GUILayout.Toggle(BlendShapes.ApplyNonZero, "Apply non-zero blend shapes to mesh");
+            BlendShapes.RemoveNonAscii = GUILayout.Toggle(BlendShapes.RemoveNonAscii, "Remove non-ascii blendshapes");
+            BlendShapes.KeepVRCShapes  = GUILayout.Toggle(BlendShapes.KeepVRCShapes, "Keep shapes containing \"vrc\"");
+            EditorGUI.EndDisabledGroup();
+        });
+
+        // ========== //
+        // Decimation //
+        // ========== //
+
+        CustomUI.Section("Decimation", ref _isDecimationShown, () => {
+
+            EditorGUILayout.HelpBox("Decimation is currently untested.", MessageType.Warning);
+
+            Decimator.Mode = (Decimator.DecimationMode)
+                EditorGUILayout.EnumPopup("Decimation", Decimator.Mode);
+
+            EditorGUI.BeginDisabledGroup(Decimator.Mode != Decimator.DecimationMode.Lossy);
+            
+            Decimator.Quality = EditorGUILayout.Slider("Quality", Decimator.Quality, 0, 1);
+            if (GUILayout.Toggle(Decimator.TargetTris > 0, "Use tris target instead of quality.")) {
+                if (Decimator.TargetTris < 1)
+                    Decimator.TargetTris = 65000;
+            } else {
+                Decimator.TargetTris = -1;
+            }
+            Decimator.TargetTris = EditorGUILayout.IntField("Target Triangles", Decimator.TargetTris);
+
+            EditorGUI.EndDisabledGroup();
+        });
+
+        GUILayout.Space(20);
+        EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
+        GUILayout.Space(20);
+
+        // ======== //
+        // Optimize //
+        // ======== //
+
+        EditorGUI.BeginDisabledGroup(!_isFbxFile);
         if (GUILayout.Button("Optimize")) {
             if (_selectedObject != null) {
-                var exporter = new Exporter(outputDir, assetName);
-
-                var copy = Duplicator.Duplicate(_selectedObject, $"{_selectedObject.name} (Optimized)");
-                Atlasser.Optimize(copy, _config, exporter);
-                exporter.ExportModel(copy);
-                
+                var exporter = new Exporter(_outputDir, _assetName);
+                _flow.Optimize(_selectedObject, exporter);
             }
         }
         EditorGUI.EndDisabledGroup();

@@ -47,8 +47,16 @@ namespace PerfHammer
                 e.Use();
             }
 
-            if (display)
+            if (display) {
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(20);
+                GUILayout.BeginVertical();
                 show();
+                GUILayout.EndVertical();
+                GUILayout.Space(20);
+                GUILayout.EndHorizontal();
+                GUILayout.Space(10);
+            }
         }
     }
 }

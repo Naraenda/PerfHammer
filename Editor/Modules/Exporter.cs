@@ -9,20 +9,22 @@ using System.Reflection;
 
 namespace PerfHammer
 {
-    public class Exporter
+    public class Exporter : IModule
     {
         public Exporter(string path, string name) {
             Path = path;
-            Name = name;
+            AssetName = name;
 
             Directory.CreateDirectory(path);
         }
 
         public string Path;
-        public string Name;
-        public GameObject ExportModel(GameObject toExport) {
-            var exportedPath = ModelExporter.ExportObject($"{Path}/{Name}_optimized.fbx", toExport);
+        public string AssetName;
 
+        public string Name => "Exporter";
+
+        public GameObject ExportModel(GameObject toExport) {
+            var exportedPath = ModelExporter.ExportObject($"{Path}/{AssetName}_optimized.fbx", toExport);
 
             AssetDatabase.ImportAsset(exportedPath, ImportAssetOptions.ForceUpdate);
             var prefab = AssetDatabase.LoadAssetAtPath<Object>(exportedPath);
@@ -36,6 +38,15 @@ namespace PerfHammer
             return instance;
         }
 
+        public void ExportMeshes(GameObject obj) {
+            foreach (var r in obj.GetComponentsInChildren<SkinnedMeshRenderer>()) {
+                var exportPath = $"{Path}/{AssetName}_mesh_{r.sharedMesh.name}.asset";
+                AssetDatabase.CreateAsset(r.sharedMesh, exportPath);
+                var m = AssetDatabase.LoadAssetAtPath<Mesh>(exportPath);
+                r.sharedMesh = m;
+            }
+        }
+
         public void CopyFromSource(GameObject from, GameObject to) {
             var ass = Assembly.GetAssembly(typeof(ModelExporter));
             var typ = ass.GetType(" UnityEditor.Formats.Fbx.Exporter.ConvertToNestedPrefab");
@@ -44,7 +55,7 @@ namespace PerfHammer
         }
 
         public Texture2D ExportTexture(Texture2D t, string id) {
-            string exportPath = $"{Path}/{Name}_{id}.png";
+            string exportPath = $"{Path}/{AssetName}_{id}.png";
 
             File.WriteAllBytes(exportPath, t.EncodeToPNG());
 
@@ -53,8 +64,13 @@ namespace PerfHammer
         }
 
         public Material ExportMaterial(Material m, string id) {
-            AssetDatabase.CreateAsset(m, $"{Path}/{Name}_{id}.mat");
+            AssetDatabase.CreateAsset(m, $"{Path}/{AssetName}_{id}.mat");
             return m;
+        }
+
+        public GameObject Run(Exporter e, GameObject obj) {
+            ExportMeshes(obj);
+            return obj;
         }
     }
 }
