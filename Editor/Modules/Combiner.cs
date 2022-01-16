@@ -100,7 +100,8 @@ namespace PerfHammer
                 Combine    = false,
             });
 
-            var discovered = new HashSet<Combineable>(sms.Union(mfs));
+            //var discovered = new HashSet<Combineable>(sms.Union(mfs));
+            var discovered = new HashSet<Combineable>(sms);
 
             foreach (var item in Combineables.Except(discovered))
                 Combineables.Remove(item);
