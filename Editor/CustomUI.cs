@@ -13,7 +13,7 @@ namespace PerfHammer
         //public static readonly GUIStyle Header = EditorResources.GetStyle("sb-settings-header");
         public static GUIStyle Header {
             get {
-                if (_header == null || true) {
+                if (_header == null) {
                     _header = new GUIStyle("ShurikenModuleTitle") {
                         font = new GUIStyle(EditorStyles.boldLabel).font,
                         fontSize = GUI.skin.font.fontSize,
@@ -26,7 +26,38 @@ namespace PerfHammer
             }
         }
 
+        public static GUIStyle AsciiArt {
+            get {
+                if (_monospace == null) {
+                    _monospace = new GUIStyle(EditorStyles.label) {
+                        fontSize = 16,
+                        font = AssetDatabase.LoadAssetAtPath("Packages/com.naraenda.perfhammer/Editor/Fonts/november.ttf", typeof(Font)) as Font,
+                        normal = new GUIStyleState() {
+                            textColor = Color.white,
+                        },
+                        wordWrap = false,
+                    };
+                }
+                return _monospace;
+            }
+        }
+
+        public static GUIStyle FoldIcon {
+            get {
+                if (_justFoldIcon == null || true) {
+                    _justFoldIcon = new GUIStyle(EditorStyles.foldoutHeader) {
+                        fixedWidth = 0.5f,
+                    };
+                }
+                return _justFoldIcon;
+            }
+        }
+
         private static GUIStyle _header;
+
+        private static GUIStyle _monospace;
+
+        private static GUIStyle _justFoldIcon;
     }
 
     public static class CustomUI
@@ -57,6 +88,14 @@ namespace PerfHammer
                 GUILayout.EndHorizontal();
                 GUILayout.Space(10);
             }
+        }
+
+        private static Rect GetLinePositionFrom(Rect rect, int line) {
+            return new Rect(
+                rect.x,
+                rect.y,
+                rect.width,
+                EditorGUIUtility.singleLineHeight);
         }
     }
 }

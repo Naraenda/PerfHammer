@@ -35,6 +35,7 @@ public class PerfHammerWindow : EditorWindow
     private bool _isObjectSelectionShown = true;
     private bool _isBlendShapesShown     = true;
     private bool _isDecimationShown      = true;
+    private bool _isMeshCombinerShown    = true;
 
     private string _assetPath = "";
     private string _assetDir  = "";
@@ -54,10 +55,27 @@ public class PerfHammerWindow : EditorWindow
 
     void OnGUI() {
         _flow = _flow ?? new OptimizationFlow();
-
+        _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
         var property_preset_names = Atlasser.ShaderPropertyFallback.Keys.ToArray();
 
-        _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(@"
+        _,
+      ,/ ]
+    ,/  /'
+   /  /'
+ ,/   \                             By Nara
+ |    |__________________,,,,,---------======,
+/|    |                  | / / / / / / / / / |
+\|    |__________________|/ / / / / / / / / /|
+ |____|'                 `````---------======'
+ ./  \. . ._ .  ._ . . ._. .  . .  . . . ._ .
+ |    | |)|_ |) |_ |-| |_| |\/| |\/| |_| |_ |)
+ |____| | |_ |\ |  | | | | |  | |  | | | |_ |\
+", GUIStyles.AsciiArt);
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
 
         // ================ //
         // Object Selection //
@@ -65,18 +83,17 @@ public class PerfHammerWindow : EditorWindow
 
         CustomUI.Section("Object Selection", ref _isObjectSelectionShown, () =>
         {
-            _selectedObject = (GameObject)EditorGUILayout.ObjectField($"Selected Object", _selectedObject, typeof(GameObject), true);
+            var newSelection = (GameObject)EditorGUILayout.ObjectField($"Selected Object", _selectedObject, typeof(GameObject), true);
+            var doRediscover = newSelection != _selectedObject;
             if (GUILayout.Button("Select from scene")) {
-                _selectedObject = Selection.activeObject as GameObject;
+                newSelection = Selection.activeObject as GameObject;
                 _flow = new OptimizationFlow();
-                if (_selectedObject) {
-                    Atlasser.DiscoverMaterials(_selectedObject);
-                    Atlasser.AutoFillProperty("_MainTex");
-                    Atlasser.AutoFill();
-                }
+                doRediscover = true;
             }
+            _selectedObject = newSelection;
 
-            if (_selectedObject) {
+            if (doRediscover && _selectedObject) {
+                // Update paths and names
                 _assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(_selectedObject);
                 if (_assetPath != "") {
                     _assetDir  = Path.GetDirectoryName(_assetPath);
@@ -84,7 +101,14 @@ public class PerfHammerWindow : EditorWindow
                 }
                 _outputDir = $"{_assetDir}/OptimizedModels/{_assetName}/";
                 _isFbxFile = Path.GetExtension(_assetPath) == ".fbx";
-            } else {
+
+                // Update discover materials
+                Atlasser.DiscoverMaterials(_selectedObject);
+                Atlasser.AutoFillProperty("_MainTex");
+                Atlasser.AutoFill();
+                _flow.Get<Combiner>().Discover(_selectedObject);
+
+            } else if (!_selectedObject) {
                 _isFbxFile = false;
             }
 
@@ -94,6 +118,12 @@ public class PerfHammerWindow : EditorWindow
                 EditorGUILayout.HelpBox($"Will generate files under {_outputDir}_*", MessageType.Info);
             }
         });
+
+        // ========== //
+        // Mesh Combiner //
+        // ========== //
+
+        _flow.Get<Combiner>().OnGUI(_selectedObject);
 
         // ============== //
         // Material Input //
