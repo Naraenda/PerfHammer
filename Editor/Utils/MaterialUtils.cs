@@ -7,6 +7,9 @@ namespace PerfHammer.Utils
 {
     public static class MaterialUtils {
         public static Shader GetCommonShader(IEnumerable<Material> materials) {
+            if (!materials.Any())
+                return null;
+
             Dictionary<string, int> shaders = new Dictionary<string, int>();
 
             foreach (var m in materials) {

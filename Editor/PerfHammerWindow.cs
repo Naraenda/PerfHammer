@@ -9,12 +9,13 @@ using System.IO;
 
 using PerfHammer;
 using PerfHammer.Utils;
+using UnityEditor.SceneManagement;
 
 public class PerfHammerWindow : EditorWindow 
 {
     static EditorWindow _window;
 
-    GameObject _selectedObject;
+    GameObject _selectedObject = null;
 
     // ======= //
     // Modules //
@@ -41,7 +42,6 @@ public class PerfHammerWindow : EditorWindow
     private string _assetDir  = "";
     private string _assetName = "";
     private string _outputDir = "";
-    private bool   _isFbxFile = false;
 
     [MenuItem("Window/Nara/PerfHammer", false, 900000)]
     public static void ShowWindow() {
@@ -90,33 +90,40 @@ public class PerfHammerWindow : EditorWindow
                 _flow = new OptimizationFlow();
                 doRediscover = true;
             }
+
             _selectedObject = newSelection;
+            Animator animator = null; 
+            if (_selectedObject)
+                animator = _selectedObject.GetComponent<Animator>();
+
+            if (animator == null) {
+                EditorGUILayout.HelpBox($"Asset without an animator selected. This can result in unexpected behaviour.", MessageType.Warning);
+            }
 
             if (doRediscover && _selectedObject) {
                 // Update paths and names
                 _assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(_selectedObject);
+                if (_assetPath == "") {
+                    _assetPath = AssetDatabase.GetAssetPath(animator);
+                }
+                if (_assetPath == "") {
+                    _assetPath = EditorSceneManager.GetActiveScene().path;
+                }
                 if (_assetPath != "") {
                     _assetDir  = Path.GetDirectoryName(_assetPath);
                     _assetName = _selectedObject.name;
                 }
-                _outputDir = $"{_assetDir}/OptimizedModels/{_assetName}/";
-                _isFbxFile = Path.GetExtension(_assetPath) == ".fbx";
+
+                _outputDir = $@"{_assetDir}\OptimizedModels\{_assetName}\";
 
                 // Update discover materials
                 Atlasser.DiscoverMaterials(_selectedObject);
                 Atlasser.AutoFillProperty("_MainTex");
                 Atlasser.AutoFill();
                 _flow.Get<Combiner>().Discover(_selectedObject);
-
-            } else if (!_selectedObject) {
-                _isFbxFile = false;
             }
 
-            if (!_isFbxFile) {
-                EditorGUILayout.HelpBox($"No FBX file selected!", MessageType.Error);
-            } else {
-                EditorGUILayout.HelpBox($"Will generate files under {_outputDir}_*", MessageType.Info);
-            }
+            EditorGUILayout.HelpBox($"Will generate files under {_outputDir}", MessageType.Info);
         });
 
         // ========== //
@@ -313,12 +320,10 @@ public class PerfHammerWindow : EditorWindow
         // Optimize //
         // ======== //
 
-        EditorGUI.BeginDisabledGroup(!_isFbxFile);
+        EditorGUI.BeginDisabledGroup(_selectedObject == null);
         if (GUILayout.Button("Optimize")) {
-            if (_selectedObject != null) {
-                var exporter = new Exporter(_outputDir, _assetName);
-                _flow.Optimize(_selectedObject, exporter);
-            }
+            var exporter = new Exporter(_outputDir, _assetName);
+            _flow.Optimize(_selectedObject, exporter);
         }
         EditorGUI.EndDisabledGroup();
 
