@@ -54,7 +54,8 @@ Installation of this tool works via the unity package manager which requires [Gi
 
 ### Updating PerfHammer
 
-Since everything is still very experimental, I won't be incrementing the SemVer
+Since everything is still very experimental, I won't be incrementing the version.
+Just check this repo occasionally and update it by re-adding the `.git` URL.
 
 ## To-Do's
 
@@ -62,9 +63,12 @@ In roughly descending priority:
 
 - If there's an animator, make the body skinned mesh renderer a child of the animator.
 - Multiply color to main texture.
+- Set texture compression on resulting atlasses.
 - Transfer blend shape values over after merging.
 - Fix the same bone showing up in duplicate armatures.
 - Clean up bone game objects after merging.
 - Allow texture up/down scaling.
 - Easier install/update process via an update manager (might or might not be aimed specifically for VRChat).
 - Make a video guide.
+- Split static mesh from meshes with blend shape data.
+- Detect animation stuff.
