@@ -112,11 +112,15 @@ namespace PerfHammer
 
         public void AutoFillProperty(string name) {
             var mats = GetAtlas(name);
-            for (int m_i = 0; m_i < mats.Count; m_i++) {
-                var kvp = mats.ElementAt(m_i);
-                var mat = kvp.Key;
-                var tex = mat.GetTexture(name) as Texture2D ?? kvp.Value;
-                mats[mat] = tex;
+            try {
+                for (int m_i = 0; m_i < mats.Count; m_i++) {
+                    var kvp = mats.ElementAt(m_i);
+                    var mat = kvp.Key;
+                    var tex = mat.GetTexture(name) as Texture2D ?? kvp.Value;
+                    mats[mat] = tex;
+                }
+            } catch(Exception e) {
+
             }
         }
 
@@ -518,7 +522,7 @@ namespace PerfHammer
             AssetDatabase.Refresh();
             tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
 
-            textureImporters.Add(imp, impOldSettings);
+            textureImporters[imp] = impOldSettings;
 
             return tex;
         }
