@@ -5,6 +5,21 @@ using UnityEngine;
 
 public static class Extensions
 {
+    public static Transform AsProxy(this Transform o, Transform proxyRoot, Transform targetRoot) {
+        var path = AnimationUtility.CalculateTransformPath(o, proxyRoot);
+
+
+        var source = targetRoot.Find(path);
+        if (!source)
+            Debug.LogWarning($"Could not find similar path {path} in {targetRoot.name} (derived from {proxyRoot.name})");
+        return source;
+    }
+
+    public static GameObject AsProxy(this GameObject o, GameObject proxyRoot, GameObject targetRoot) {
+        var result = o.transform.AsProxy(proxyRoot.transform, targetRoot.transform);
+        return result != null ? result.gameObject : null;
+    }
+
     public static IEnumerable<GameObject> InThisAndParents(this GameObject o) {
         while (o != null) {
             yield return o;

@@ -82,7 +82,7 @@ namespace PerfHammer
             return m;
         }
 
-        public GameObject Run(Exporter e, GameObject obj) {
+        public GameObject Run(Exporter e, GameObject obj, GameObject reference) {
             return obj;
             var rs = obj.GetComponentsInChildren<SkinnedMeshRenderer>();
 

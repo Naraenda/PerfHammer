@@ -32,6 +32,12 @@ namespace PerfHammer
             public Shader   ReferenceShader;
         }
 
+        public class Map
+        {
+            public Texture2D Texture = null;
+            public Color     Color   = Color.white;
+        }
+
         /// <summary>
         /// Descriptor of a texture atlas
         /// </summary>
@@ -43,8 +49,8 @@ namespace PerfHammer
 
             public string PropertyName = "";
             public Color  DefaultColor = Color.black;
-            public int    UVChannel = 0;
-            public Dictionary<Material, Texture2D> Mapping = new Dictionary<Material, Texture2D>();
+            public int    UVChannel    = 0;
+            public Dictionary<Material, Map> Mapping = new Dictionary<Material, Map>();
         }
 
         public List<MaterialGroup> Groups = new List<MaterialGroup>() { new MaterialGroup() };
@@ -56,18 +62,163 @@ namespace PerfHammer
             new Atlas("_MainTex")
         };
 
-        public GameObject Run(Exporter e, GameObject obj) {
+        public GameObject Run(Exporter e, GameObject obj, GameObject reference) {
             var rs = obj.GetComponentsInChildren<SkinnedMeshRenderer>();
-            foreach (var r in rs) {
-                //RemoveDuplicateMaterials(r);
-                MakeAtlas(r.sharedMesh, r, e);
+            foreach (var x in rs) {
+                MakeAtlas(x.sharedMesh, x, e);
             }
             return obj;
         }
 
+        bool _isMaterialInputShown  = true;
+        bool _isMaterialOutputShown = true;
+
+        public void OnGUI(GameObject _selectedObject) {
+            string[] property_preset_names = ShaderPropertyFallback.Keys.ToArray();
+
+            CustomUI.Section("Material Input", ref _isMaterialInputShown, () => {
+                if (GUILayout.Button("Refresh materials")) {
+                    DiscoverMaterials(_selectedObject);
+                }
+                GUILayout.Space(5);
+
+
+                // Display UI for each Atlas
+                EditorGUI.indentLevel++;
+                Stack<int> removedAtlasIndices = new Stack<int>();
+                for (int a_i = 0; a_i < Atlasses.Count; a_i++) {
+                    var a = Atlasses[a_i];
+                    if (a_i > 0) {
+                        GUILayout.Space(5);
+                        EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
+                        GUILayout.Space(5);
+                    }
+
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.BeginVertical();
+
+                    a.PropertyName = EditorGUILayout.TextField(a.PropertyName);
+
+                    var a_name_int = EditorGUILayout.Popup(Array.IndexOf(property_preset_names, a.PropertyName), property_preset_names);
+                    if (a_name_int >= 0)
+                        a.PropertyName = property_preset_names[a_name_int];
+
+                    if (a_i > 0)
+                        if (GUILayout.Button("Remove"))
+                            removedAtlasIndices.Push(a_i);
+
+                    EditorGUILayout.EndVertical();
+
+                    EditorGUILayout.BeginVertical();
+                    for (int m_i = 0; m_i < a.Mapping.Count; m_i++) {
+                        var m_kvp = a.Mapping.ElementAt(m_i);
+                        var m_mat = m_kvp.Key;
+                        var m_map = m_kvp.Value;
+
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUI.BeginDisabledGroup(true);
+                        EditorGUILayout.ObjectField(m_mat, typeof(Material), false);
+                        EditorGUI.EndDisabledGroup();
+                        m_map.Texture = EditorGUILayout.ObjectField(m_map.Texture, typeof(Texture2D), false) as Texture2D;
+                        m_map.Color   = EditorGUILayout.ColorField(m_map.Color, GUILayout.Width(52));
+                        EditorGUILayout.EndHorizontal();
+                    }
+
+                    // Update
+                    Atlasses[a_i] = a;
+
+                    if (GUILayout.Button("Auto-fill")) {
+                        AutoFillProperty(a.PropertyName);
+                    }
+
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.EndHorizontal();
+                    if (a_i == 0) {
+                        EditorGUILayout.HelpBox("This is your main texture atlas (diffuse).", MessageType.Info);
+                        GUILayout.Space(5);
+                    }
+
+                }
+                foreach (var index in removedAtlasIndices) {
+                    Atlasses.RemoveAt(index);
+                }
+
+                EditorGUI.indentLevel--;
+                if (GUILayout.Button("Add atlas")) {
+                    AddAtlas();
+                }
+            });
+
+            CustomUI.Section("Material Output", ref _isMaterialOutputShown, () => {
+
+                // Display UI for each output group
+                EditorGUI.indentLevel++;
+                for (int g_i = 0; g_i < Groups.Count; g_i++) {
+                    var g = Groups[g_i];
+                    if (g_i > 0) {
+                        GUILayout.Space(5);
+                        EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
+                        GUILayout.Space(5);
+                    }
+
+                    EditorGUILayout.BeginHorizontal();
+
+                    EditorGUILayout.BeginVertical();
+                    float labelWidth = EditorGUIUtility.labelWidth;
+                    EditorGUIUtility.labelWidth = 75;
+
+                    g.Name = EditorGUILayout.TextField(g.Name);
+                    g.ReferenceMaterial = (Material)EditorGUILayout.ObjectField("Material", g.ReferenceMaterial, typeof(Material), false);
+
+                    if (g.ReferenceMaterial != null) {
+                        g.ReferenceShader = MaterialUtils.GetCommonShader(new Material[] { g.ReferenceMaterial });
+                    }
+
+                    EditorGUI.BeginDisabledGroup(g.ReferenceMaterial != null);
+                    g.ReferenceShader = (Shader)EditorGUILayout.ObjectField("Shader", g.ReferenceShader, typeof(Shader), false);
+                    EditorGUI.EndDisabledGroup();
+
+                    EditorGUIUtility.labelWidth = labelWidth;
+                    EditorGUILayout.EndVertical();
+
+                    EditorGUILayout.BeginVertical();
+
+                    for (int g_m_i = 0; g_m_i < g.Materials.Count; g_m_i++) {
+                        var material = g.Materials.ElementAt(g_m_i);
+                        EditorGUILayout.BeginHorizontal();
+
+                        EditorGUI.BeginDisabledGroup(true);
+                        EditorGUILayout.ObjectField(material, typeof(Material), false);
+                        EditorGUI.EndDisabledGroup();
+
+
+                        EditorGUI.BeginDisabledGroup(g_i == 0);
+                        if (GUILayout.Button("Up")) {
+                            MoveMaterial(material, g_i - 1);
+                        }
+                        EditorGUI.EndDisabledGroup();
+
+                        if (GUILayout.Button("Down")) {
+                            MoveMaterial(material, g_i + 1);
+                        }
+                        EditorGUILayout.EndHorizontal();
+                    }
+
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.EndHorizontal();
+                }
+                EditorGUI.indentLevel--;
+            });
+        }
+
         public void DiscoverMaterials(GameObject go) {
-            var rs = go.GetComponentsInChildren<SkinnedMeshRenderer>();
-            var detected = new HashSet<Material>(rs.SelectMany(r => r.sharedMaterials));
+            var detected = new HashSet<Material>(
+                go.GetComponentsInChildren<SkinnedMeshRenderer>()
+                    .SelectMany(r => r.sharedMaterials));
+
+            detected.UnionWith(
+                go.GetComponentsInChildren<MeshRenderer>()
+                    .SelectMany(r => r.sharedMaterials));
 
             var contained = new HashSet<Material>(GetAllMaterials());
 
@@ -92,11 +243,13 @@ namespace PerfHammer
 
                 foreach (var m in materials)
                     if (!atlas.Mapping.ContainsKey(m))
-                        atlas.Mapping.Add(m, null);
+                        atlas.Mapping.Add(m, new Map());
             }
 
             foreach (var group in Groups) {
-                group.ReferenceShader = group.ReferenceShader ?? MaterialUtils.GetCommonShader(group.Materials);
+                group.ReferenceShader = group.ReferenceShader != null ? 
+                    group.ReferenceShader : 
+                    MaterialUtils.GetCommonShader(group.Materials);
             }
         }
 
@@ -105,7 +258,7 @@ namespace PerfHammer
             foreach (var p in properties.Where(p => !Atlasses.Select(a => a.PropertyName).Contains(p))) {
                 var a = AddAtlas(p);
                 AutoFillProperty(p);
-                if (a.Mapping.Select(m => m.Value).All(t => t == null))
+                if (a.Mapping.Select(m => m.Value).All(m => m.Texture == null && m.Color == Color.white))
                     Atlasses.Remove(a);
             }
         }
@@ -116,21 +269,24 @@ namespace PerfHammer
                 for (int m_i = 0; m_i < mats.Count; m_i++) {
                     var kvp = mats.ElementAt(m_i);
                     var mat = kvp.Key;
-                    var tex = mat.GetTexture(name) as Texture2D ?? kvp.Value;
-                    mats[mat] = tex;
+                    var tex = kvp.Value.Texture;
+                    if (mat.HasProperty(name))
+                        tex = mat.GetTexture(name) as Texture2D;
+                    mats[mat].Texture = tex;
+                    mats[mat].Color = Color.white;
                 }
             } catch(Exception e) {
-
+                Debug.LogWarning($"Error while filling in property for atlas {name}:\n" + e);
             }
         }
 
-        public Dictionary<Material, Texture2D> GetAtlas(string name)
-            => Atlasses.First(x => x.PropertyName == name).Mapping;
+        public Dictionary<Material, Map> GetAtlas(string name)
+            => Atlasses.Find(x => x.PropertyName == name)?.Mapping;
 
         public Atlas AddAtlas(string name = "") {
             var atlas = new Atlas() {
                 PropertyName = name,
-                Mapping = GetAllMaterials().ToDictionary(k => k, v => (Texture2D)null)
+                Mapping = GetAllMaterials().ToDictionary(k => k, v => new Map())
             };
 
             Atlasses.Add(atlas);
@@ -138,10 +294,10 @@ namespace PerfHammer
         }
 
         public Texture2D GetTex(string name, Material mat)
-            => GetAtlas(name)[mat];
+            => GetAtlas(name)[mat].Texture;
 
         public Texture2D GetMainTex(Material mat)
-            => Atlasses.First().Mapping[mat];
+            => Atlasses.First().Mapping[mat].Texture;
 
         public IEnumerable<Material> GetAllMaterials()
             => Groups.SelectMany(g => g.Materials);
@@ -188,10 +344,10 @@ namespace PerfHammer
             for (int m_i = 0; m_i < mesh.subMeshCount; m_i++) {
                 toMerge[m_i] = new List<int> { m_i };
 
-                if (materials[m_i]?.mainTexture == null) continue;
+                if (materials[m_i] == null || materials[m_i].mainTexture == null) continue;
 
                 for (int m_j = m_i + 1; m_j < mesh.subMeshCount; m_j++) {
-                    if (materials[m_j]?.mainTexture == null) continue;
+                    if (materials[m_j] == null || materials[m_j].mainTexture == null) continue;
 
                     if (materials[m_i].mainTexture == materials[m_j].mainTexture)
                         toMerge[m_i].Add(m_j);
@@ -292,8 +448,6 @@ namespace PerfHammer
                     int p_width  = p_max_x - p_min_x;
                     int p_height = p_max_y - p_min_y;
 
-                    Debug.Log($"{m_mat.name} contains no or very small textures");
-
                     m_pBound = new RectInt(p_min_x, p_min_y, p_width, p_height);
                 }
 
@@ -369,7 +523,8 @@ namespace PerfHammer
                 for (int m_i = 0; m_i < materialCount; m_i++) {
                     var m_mat  = materials[m_i];
                     var m_mtex = mainTextures[m_i];
-                    var m_tex  = GetSourceQuality(GetTex(a.PropertyName, m_mat)) ?? a_fallback;
+                    var m_tex  = GetSourceQuality(GetTex(a.PropertyName, m_mat));
+                    m_tex = m_tex != null ? m_tex : a_fallback;
                     var m_path   = AssetDatabase.GetAssetPath(m_tex);
                     var m_pBound = pBounds[m_i];
                     var m_fBound = fBounds[m_i];
@@ -452,8 +607,6 @@ namespace PerfHammer
 
             for (int s = 0; s < mesh.subMeshCount; s++) {
                 var m = renderer.sharedMaterials[s];
-
-                Debug.Log($"Mapping material {m.name} to index {FindGroup(m)}");
                 submeshes[FindGroup(m)].AddRange(mesh.GetTriangles(s));
             }
 
@@ -473,9 +626,21 @@ namespace PerfHammer
             var newMaterials = new Material[mesh.subMeshCount];
             for (int g = 0; g < Groups.Count; g++) {
                 var group = Groups[g];
-                Material newMaterial = group.ReferenceMaterial != null ? 
-                    new Material(group.ReferenceMaterial) : 
-                    new Material(group.ReferenceShader ?? Shader.Find("Standard"));
+
+                // Get new material
+                Material newMaterial = group.ReferenceMaterial;
+                if (newMaterial == null) {
+                    if (group.ReferenceMaterial != null) {
+                        newMaterial = new Material(group.ReferenceMaterial);
+                    } else {
+                        var shader = group.ReferenceShader;
+                        if (shader != null) {
+                            newMaterial = new Material(group.ReferenceShader);
+                        } else {
+                            newMaterial = new Material(Shader.Find("Standard"));
+                        }
+                    }
+                }
                 newMaterials[g] = newMaterial;
 
                 foreach (var item in generatedTextures) {
@@ -493,16 +658,17 @@ namespace PerfHammer
 
         public static Texture2D CreateDummyTexture(Color color) {
             var texture = new Texture2D(DEFAULT_SIZE, DEFAULT_SIZE);
-            var pixels = new Color[texture.width * texture.height];
+            var pixels = new Color32[texture.width * texture.height];
+            var color32 = (Color32)color;
 
             for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = color;
+                pixels[i] = color32;
 
-            texture.SetPixels(pixels);
+            texture.SetPixels32(pixels);
             return texture;
         }
 
-        Dictionary<TextureImporter, Preset> textureImporters = new Dictionary<TextureImporter, Preset>();
+        readonly Dictionary<TextureImporter, Preset> textureImporters = new Dictionary<TextureImporter, Preset>();
 
         Texture2D GetSourceQuality(Texture2D tex) {
             var path = AssetDatabase.GetAssetPath(tex);

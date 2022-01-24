@@ -39,7 +39,7 @@ namespace PerfHammer
             return o.ToMesh();
         }
 
-        public GameObject Run(Exporter e, GameObject obj) {
+        public GameObject Run(Exporter e, GameObject obj, GameObject reference) {
             var rs = obj.GetComponentsInChildren<SkinnedMeshRenderer>();
 
             var meshes = rs.Select(r => r.sharedMesh);

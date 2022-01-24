@@ -8,7 +8,7 @@ namespace PerfHammer
     {
         string Name { get; }
 
-        GameObject Run(Exporter e, GameObject obj);
+        GameObject Run(Exporter e, GameObject obj, GameObject reference);
     }
 }
 

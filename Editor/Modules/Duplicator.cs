@@ -1,5 +1,5 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
 namespace PerfHammer
@@ -13,7 +13,7 @@ namespace PerfHammer
         /// <summary>
         /// Copies the gameobject and duplicates the contained meshes
         /// </summary>
-        public GameObject Run(Exporter e, GameObject obj) {
+        public GameObject Run(Exporter e, GameObject obj, GameObject reference) {
             var copy = Object.Instantiate(obj);
 
             var sms = copy.GetComponentsInChildren<SkinnedMeshRenderer>();
@@ -36,6 +36,13 @@ namespace PerfHammer
                 r.sharedMesh = replacements[r.sharedMesh];
             }
 
+            foreach (var t in copy.transform.GetComponentsInChildren<Transform>()) {
+                while (PrefabUtility.IsPartOfAnyPrefab(t)) {
+                    Debug.Log($"Clearing prefab handle {t.name}");
+                    var handle = PrefabUtility.GetPrefabInstanceHandle(t);
+                    Object.DestroyImmediate(handle);
+                }
+            }
             return copy;
         }
     }

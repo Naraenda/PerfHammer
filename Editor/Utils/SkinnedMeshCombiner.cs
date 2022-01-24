@@ -6,7 +6,6 @@ using UnityEngine;
 
 namespace PerfHammer.Utils
 {
-
     public struct SkinnedMeshInstance
     {
         public Mesh Mesh { get; set; }
@@ -14,6 +13,7 @@ namespace PerfHammer.Utils
         public int SubMeshIndex { get; set; }
         public Matrix4x4 Transform { get; set; }
         public Material Material { get; set; }
+        public Transform Bone { get; set; }
     }
     public static class SkinnedMeshCombiner {
 
@@ -40,6 +40,24 @@ namespace PerfHammer.Utils
             var rBinds = new List<Matrix4x4>();
             var indexMap = new List<int[]>();
 
+            // Convert non-skinned meshes to skinned
+            for (var i = 0; i < combine.Count; i++) {
+                var comb = combine[i];
+                // Generate a skinned mesh
+                if (!comb.SMR) {
+                    comb.Mesh = UnityEngine.Object.Instantiate(comb.Mesh);
+                    comb.Mesh.bindposes = new Matrix4x4[] { comb.Transform };
+                    comb.Mesh.boneWeights = Enumerable.Repeat(new BoneWeight {
+                        boneIndex0 = 0,
+                        weight0 = 1,
+                        weight1 = 0,
+                        weight2 = 0,
+                        weight3 = 0,
+                    }, comb.Mesh.vertexCount).ToArray();
+                }
+                combine[i] = comb;
+            }
+
             var currentIndiceCount = 0;
             var currentSubmeshCount = 0;
             for (var i = 0; i < combine.Count; i++) {
@@ -47,10 +65,11 @@ namespace PerfHammer.Utils
 
                 // The mapping of old bone indices to new bone indices
                 var boneRemap = new Dictionary<int, int>();
-
+                var boneAdjust = new Dictionary<int, Matrix4x4>();
+                var boneCount = comb.SMR ? comb.SMR.bones.Length : 1;
                 // For each new bone
-                for (int cb_i = 0; cb_i < comb.SMR.bones.Length; cb_i++) {
-                    var bone = comb.SMR.bones[cb_i];
+                for (int cb_i = 0; cb_i < boneCount; cb_i++) {
+                    var bone = comb.SMR ? comb.SMR.bones[cb_i] : comb.Bone;
                     var bind = comb.Mesh.bindposes[cb_i];
 
                     // Check if the bone is already mapped
@@ -59,6 +78,10 @@ namespace PerfHammer.Utils
                         rb_i = rBone.Count;
                         rBone.Add(bone);
                         rBinds.Add(bind);
+                    } else {
+                        // Bone already exists, calculate transforms to fit new bone
+                        //boneAdjust[cb_i] = comb.SMR ? rBinds[rb_i].inverse * bind : bind;
+                        boneAdjust[cb_i] = rBinds[rb_i].inverse * bind;
                     }
 
                     // Map the combining bone index to the resulting bone index
@@ -87,10 +110,13 @@ namespace PerfHammer.Utils
                     // if ind not assigned
                     if (tempAssign[ind] == 0) {
                         rInd.Add(currentIndiceCount);
-                        rVerts.Add(comb.Transform * tVerts[ind]);
+                        rVerts.Add(
+                            AdjustForBone(tVerts[ind], tBoneW[ind], boneAdjust));
+                        rNorms.Add(
+                            AdjustForBone(tNorms[ind], tBoneW[ind], boneAdjust));
+                        rTangs.Add(
+                            AdjustForBone(tTangs[ind], tBoneW[ind], boneAdjust));
                         rUv0s.Add(tUv0s[ind]);
-                        rNorms.Add(tNorms[ind]);
-                        rTangs.Add(tTangs[ind]);
                         rCols.Add(tCols.Count > 0 ? tCols[ind] : default);
                         rBoneW.Add(RemapBoneWeight(tBoneW[ind], idx => boneRemap[idx]));
 
@@ -117,7 +143,8 @@ namespace PerfHammer.Utils
             for (var i = 0; i < currentSubmeshCount; i++)
                 resultMesh.SetTriangles(rInds[i], i, false);
 
-            CopyBlendShapes(combine.First().Mesh, resultMesh, indexMap);
+            TransferBlendShapes(combine, resultMesh, indexMap);
+
             resultMesh.RecalculateBounds();
 
             result.sharedMaterials = combine.Select(c => c.Material).ToArray();
@@ -157,33 +184,100 @@ namespace PerfHammer.Utils
             return w;
         }
 
-        private static void CopyBlendShapes(Mesh input, Mesh output, IList<int[]> indexMap) {
-            if (input.blendShapeCount <= 0)
-                return;
+        private static Vector3 AdjustForBone(Vector3 v, BoneWeight w, IDictionary<int, Matrix4x4> m, bool asVector = false) {
+            var res = Vector3.zero;
 
-            var inputDeltaVertices = new Vector3[input.vertexCount];
-            var inputDeltaNormals  = new Vector3[input.vertexCount];
-            var inputDeltaTangents = new Vector3[input.vertexCount];
-            var deltaVertices = new Vector3[output.vertexCount];
-            var deltaNormals  = new Vector3[output.vertexCount];
-            var deltaTangents = new Vector3[output.vertexCount];
+            bool hasAdjusted = false;
+            for (int i = 0; i < 4; i++) {
+                var idx = w.GetIndex(i);
+                var weight = w.GetWeigth(i);
+                if (idx <  0 || weight <= 0)
+                    continue;
 
-            for (var i = 0; i < input.blendShapeCount; i++) {
-                var frameCount = input.GetBlendShapeFrameCount(i);
-                for (var frameIndex = 0; frameIndex < frameCount; frameIndex++) {
-                    var name = input.GetBlendShapeName(i);
-                    var weight = input.GetBlendShapeFrameWeight(i, frameIndex);
+                if (m.TryGetValue(idx, out Matrix4x4 m_idx)) {
+                    res += weight * (asVector ? 
+                        m_idx.MultiplyVector(v) : 
+                        m_idx.MultiplyPoint(v));
+                    hasAdjusted = true;
+                } else {
+                    res += weight * v;
+                }
+            }
+            // if not adjusted return original to perserve accuracy
+            return hasAdjusted ? res : v;
+        }
 
-                    input.GetBlendShapeFrameVertices(i, frameIndex, inputDeltaVertices, inputDeltaNormals, inputDeltaTangents);
+        class BlendShape
+        {
+            public Dictionary<float, BlendShapeFrame> Frames = new Dictionary<float, BlendShapeFrame>();
+        }
 
-                    var inputLength = Math.Min(inputDeltaVertices.Length, deltaVertices.Length);
-                    for (var j = 0; j < inputLength; j += 1) {
-                        deltaVertices[indexMap[0][j]] = inputDeltaVertices[j];
-                        deltaNormals[indexMap[0][j]] = inputDeltaNormals[j];
-                        deltaTangents[indexMap[0][j]] = inputDeltaTangents[j];
+        class BlendShapeFrame
+        {
+            public BlendShapeFrame(int size) {
+                dVert = new Vector3[size];
+                dNorm = new Vector3[size];
+                dTang = new Vector3[size];
+            }
+
+            public Vector3[] dVert;
+            public Vector3[] dNorm;
+            public Vector3[] dTang;
+        }
+
+        private static void TransferBlendShapes(IList<SkinnedMeshInstance> input, Mesh output, IList<int[]> indexMap) {
+            var blendShapes = new Dictionary<string, BlendShape>();
+
+            // For each combine instance
+            for (int i = 0; i < indexMap.Count; i++) {
+                var map  = indexMap[i];
+                var mesh = input[i].Mesh;
+
+                var dVert = new Vector3[mesh.vertexCount];
+                var dNorm = new Vector3[mesh.vertexCount];
+                var dTang = new Vector3[mesh.vertexCount];
+
+                // for each blendshape
+                for (int s_i = 0; s_i < mesh.blendShapeCount; s_i++) {
+                    var name = mesh.GetBlendShapeName(s_i);
+                    var frameCount = mesh.GetBlendShapeFrameCount(s_i);
+
+                    if (!blendShapes.ContainsKey(name)) {
+                        blendShapes[name] = new BlendShape();
                     }
+                    var blendShape = blendShapes[name];
 
-                    output.AddBlendShapeFrame(name, weight, deltaVertices, deltaNormals, deltaTangents);
+                    // For each frame
+                    for (int f_i = 0; f_i < frameCount; f_i++) {
+                        mesh.GetBlendShapeFrameVertices(s_i, f_i, dVert, dNorm, dTang);
+
+                        var weight = mesh.GetBlendShapeFrameWeight(s_i, f_i);
+                        if (!blendShape.Frames.ContainsKey(weight)) {
+                            blendShape.Frames[weight] = new BlendShapeFrame(output.vertexCount);
+                        }
+                        var frame = blendShape.Frames[weight];
+
+                        // For each delta in frame, copy to resulting delta
+                        for (int j = 0; j < indexMap[i].Length; j++) {
+                            frame.dVert[indexMap[i][j]] = dVert[j];
+                            frame.dNorm[indexMap[i][j]] = dNorm[j];
+                            frame.dTang[indexMap[i][j]] = dTang[j];
+                        }
+
+                    }
+                }
+            }
+
+            // Apply frames to mesh
+            foreach (var bs in blendShapes) {
+                var name  = bs.Key;
+                var shape = bs.Value;
+
+                foreach (var f in shape.Frames.OrderBy(kvp => kvp.Key)) {
+                    var weight = f.Key;
+                    var frame  = f.Value;
+
+                    output.AddBlendShapeFrame(name, weight, frame.dVert, frame.dNorm, frame.dTang);
                 }
             }
         }

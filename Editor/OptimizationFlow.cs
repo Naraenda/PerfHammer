@@ -26,7 +26,7 @@ namespace PerfHammer
             var result = obj;
             foreach (var module in Modules) {
                 Debug.Log($"### Module {module.Name}");
-                result = module.Run(exporter, result);
+                result = module.Run(exporter, result, obj);
             }
             Debug.Log($"### Module {exporter.Name}");
             exporter.ExportMeshes(result);

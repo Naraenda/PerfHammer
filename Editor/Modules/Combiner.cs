@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using PerfHammer.Utils;
+using System;
 
 namespace PerfHammer
 {
@@ -85,7 +86,7 @@ namespace PerfHammer
         public IEnumerable<MergeableBone> GetMergeableBones()
             => Armatures.SelectMany(a => a.Traverse());
 
-        public HashSet<Combineable> Combineables = new HashSet<Combineable>();
+        public List<Combineable> Combineables = new List<Combineable>();
 
         public string Name => "Combiner";
 
@@ -102,12 +103,17 @@ namespace PerfHammer
 
             //var discovered = new HashSet<Combineable>(sms.Union(mfs));
             var discovered = new HashSet<Combineable>(sms);
+            discovered.UnionWith(mfs);
 
             foreach (var item in Combineables.Except(discovered))
                 Combineables.Remove(item);
 
             foreach (var item in discovered.Except(Combineables))
                 Combineables.Add(item);
+
+            Combineables = Combineables
+                .OrderBy(c => c.GameObject.name.ToLower() == "body" ? "" : c.GameObject.name)
+                .ToList();
 
             var bones = Combineables
                 .Select(c => c.GameObject.GetComponent<SkinnedMeshRenderer>())
@@ -134,8 +140,10 @@ namespace PerfHammer
                         break;
                     }
                 }
+
                 if (parent != null) {
-                    parent.Children.Add(arm);
+                    if (parent.Bone != arm.Bone)
+                        parent.Children.Add(arm);
                     Armatures.RemoveAt(i--);
                 }
             }
@@ -145,12 +153,20 @@ namespace PerfHammer
             }
         }
 
-        public GameObject Run(Exporter e, GameObject obj) {
-            var components = obj.GetComponentsInChildren<SkinnedMeshRenderer>();
-            var targetComponent = components.First();
+        public GameObject Run(Exporter e, GameObject obj, GameObject reference) {
+            var skinned = Combineables
+                .Select(c => c.GameObject.AsProxy(reference, obj).GetComponent<SkinnedMeshRenderer>())
+                .Where(c => c != null)
+                .ToList();
+            var targetComponent = skinned.First();
 
-            var merges = components.SelectMany(r =>
-                Enumerable.Range(0, r.sharedMesh.subMeshCount).Select(s =>
+            var rigid = Combineables
+                .Select(c => c.GameObject.AsProxy(reference, obj).GetComponent<MeshRenderer>())
+                .Where(c => c != null)
+                .ToList();
+
+            var merges = skinned.SelectMany(r =>
+                Enumerable.Range(0, r.sharedMesh.subMeshCount).Select(s => 
                     new SkinnedMeshInstance {
                         Mesh = r.sharedMesh,
                         SMR = r,
@@ -158,15 +174,46 @@ namespace PerfHammer
                         Transform = Matrix4x4.identity,
                         Material = r.sharedMaterials[s],
                     }
-                )
-            ).ToList();
+                )).Union(rigid.SelectMany(r => {
+                    var mesh = r.GetComponent<MeshFilter>().sharedMesh;
+
+                    var bone = r.transform;
+                    while (!GetMergeableBones().Select(b => b.Bone.AsProxy(reference.transform, obj.transform)).Contains(bone)) {
+                        if (!bone.parent) {
+                            bone = null;
+                            Debug.LogWarning($"Could not find bone to attach to for {r.name}");
+                            break;
+                        }
+                        bone = bone.parent;
+                    }
+
+                    var arm = Armatures
+                        .Find(a => a.Traverse()
+                            .Select(b => b.Bone.AsProxy(reference.transform, obj.transform))
+                            .Contains(bone)
+                        ).Bone.parent;
+
+                    return Enumerable.Range(0, mesh.subMeshCount).Select(s =>
+                        new SkinnedMeshInstance {
+                            Mesh = mesh,
+                            SubMeshIndex = s,
+                            Transform = bone.worldToLocalMatrix /* arm.localToWorldMatrix*/ * r.transform.localToWorldMatrix,
+                            Bone = bone,
+                            Material = r.GetComponent<MeshRenderer>().sharedMaterials[s],
+                        });
+               })).ToList();
 
             SkinnedMeshCombiner.CombineMeshes(merges, targetComponent);
 
-            foreach (var c in components.Except(new[] { targetComponent }))
-                Object.DestroyImmediate(c.gameObject);
+            foreach (var c in skinned.Except(new[] { targetComponent })) {
+                UnityEngine.Object.DestroyImmediate(c.gameObject);
+            }
 
-            targetComponent.sharedMesh.name = $"{targetComponent.gameObject.name}";
+            foreach (var c in rigid) {
+                if (c) {
+                    UnityEngine.Object.DestroyImmediate(c);
+                }
+            }
 
             // Do bone merging
             var merger = new SkinnedMeshCombiner.BoneMergeBuilder(targetComponent);
@@ -174,11 +221,22 @@ namespace PerfHammer
                 arm.MergeAsProxy(SourceTransformRoot, obj.transform, merger);
             merger.Apply();
 
+            // Set names
+            targetComponent.name = $"Body";
+            targetComponent.sharedMesh.name = $"{targetComponent.gameObject.name}";
+
+            // Move renderer to the child of the renderer
+            targetComponent.transform.SetParent(obj.transform);
+
             return obj;
         }
 
         public void SetBoneMergeMode(Combineable c, BoneMergeMode m) {
-            var bones = c.GameObject.GetComponent<SkinnedMeshRenderer>()?.bones;
+            var smr = c.GameObject.GetComponent<SkinnedMeshRenderer>();
+            if (smr == null)
+                return;
+
+            var bones = smr.bones;
             if (bones == null || bones.Length == 0)
                 return;
 

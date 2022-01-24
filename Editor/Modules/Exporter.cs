@@ -68,7 +68,7 @@ namespace PerfHammer
             return m;
         }
 
-        public GameObject Run(Exporter e, GameObject obj) {
+        public GameObject Run(Exporter e, GameObject obj, GameObject reference) {
             ExportMeshes(obj);
             return obj;
         }

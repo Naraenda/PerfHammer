@@ -18,6 +18,8 @@ namespace PerfHammer.Utils
 
                 if (name.StartsWith("Hidden/Locked/")) {
                     name = Regex.Match(name, @"^Hidden\/Locked\/(.*)\/.*$").Groups[1].Value;
+                } else if (name.StartsWith("Hidden/")) {
+                    name = "Standard";
                 }
 
                 if (!shaders.ContainsKey(name)) {

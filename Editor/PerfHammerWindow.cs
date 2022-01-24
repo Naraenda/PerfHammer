@@ -31,12 +31,9 @@ public class PerfHammerWindow : EditorWindow
     // ======== //
 
     private Vector2 _scrollPosition = Vector2.zero;
-    private bool _isMaterialInputShown   = true;
-    private bool _isMaterialOutputShown  = true;
     private bool _isObjectSelectionShown = true;
     private bool _isBlendShapesShown     = true;
     private bool _isDecimationShown      = true;
-    private bool _isMeshCombinerShown    = true;
 
     private string _assetPath = "";
     private string _assetDir  = "";
@@ -136,142 +133,7 @@ public class PerfHammerWindow : EditorWindow
         // Material Input //
         // ============== //
 
-        CustomUI.Section("Material Input", ref _isMaterialInputShown, () => {
-            if (GUILayout.Button("Refresh materials")) {
-                Atlasser.DiscoverMaterials(_selectedObject);
-            }
-            GUILayout.Space(5);
-
-
-            // Display UI for each Atlas
-            EditorGUI.indentLevel++;
-            Stack<int> removedAtlasIndices = new Stack<int>();
-            for (int a_i = 0; a_i < Atlasser.Atlasses.Count; a_i++) {
-                var a = Atlasser.Atlasses[a_i];
-                if (a_i > 0) {
-                    GUILayout.Space(5);
-                    EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
-                    GUILayout.Space(5);
-                }
-
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.BeginVertical();
-
-                a.PropertyName = EditorGUILayout.TextField(a.PropertyName);
-
-                var a_name_int = EditorGUILayout.Popup(Array.IndexOf(property_preset_names, a.PropertyName), property_preset_names);
-                if (a_name_int >= 0)
-                    a.PropertyName = property_preset_names[a_name_int];
-
-                if (a_i > 0)
-                    if (GUILayout.Button("Remove"))
-                        removedAtlasIndices.Push(a_i);
-
-                EditorGUILayout.EndVertical();
-
-                EditorGUILayout.BeginVertical();
-                for (int m_i = 0; m_i < a.Mapping.Count; m_i++) {
-                    var m_kvp = a.Mapping.ElementAt(m_i);
-                    var m_mat = m_kvp.Key;
-                    var m_tex = m_kvp.Value;
-
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUI.BeginDisabledGroup(true);
-                    EditorGUILayout.ObjectField(m_mat, typeof(Material), false);
-                    EditorGUI.EndDisabledGroup();
-                    a.Mapping[m_mat] = (Texture2D)EditorGUILayout.ObjectField(m_tex, typeof(Texture2D), false);
-                    EditorGUILayout.EndHorizontal();
-                }
-
-                // Update
-                Atlasser.Atlasses[a_i] = a;
-
-                if (GUILayout.Button("Auto-fill")) {
-                    Atlasser.AutoFillProperty(a.PropertyName);
-                }
-
-                EditorGUILayout.EndVertical();
-                EditorGUILayout.EndHorizontal();
-                if (a_i == 0) {
-                    EditorGUILayout.HelpBox("This is your main texture atlas (diffuse).", MessageType.Info);
-                    GUILayout.Space(5);
-                }
-
-            }
-            foreach (var index in removedAtlasIndices) {
-                Atlasser.Atlasses.RemoveAt(index);
-            }
-
-            EditorGUI.indentLevel--;
-            if (GUILayout.Button("Add atlas")) {
-                Atlasser.AddAtlas();
-            }
-        });
-
-        // =============== //
-        // Material Output //
-        // =============== //
-
-        CustomUI.Section("Material Output", ref _isMaterialOutputShown, () => {
-
-            // Display UI for each output group
-            EditorGUI.indentLevel++;
-            for (int g_i = 0; g_i < Atlasser.Groups.Count; g_i++) {
-                var g = Atlasser.Groups[g_i];
-                if (g_i > 0) {
-                    GUILayout.Space(5);
-                    EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), Color.gray);
-                    GUILayout.Space(5);
-                }
-
-                EditorGUILayout.BeginHorizontal();
-
-                EditorGUILayout.BeginVertical(); 
-                float labelWidth = EditorGUIUtility.labelWidth;
-                EditorGUIUtility.labelWidth = 75;
-
-                g.Name = EditorGUILayout.TextField(g.Name);
-                g.ReferenceMaterial = (Material)EditorGUILayout.ObjectField("Material", g.ReferenceMaterial, typeof(Material), false);
-
-                if (g.ReferenceMaterial != null) {
-                    g.ReferenceShader = MaterialUtils.GetCommonShader(new Material[] { g.ReferenceMaterial });
-                }
-
-                EditorGUI.BeginDisabledGroup(g.ReferenceMaterial != null);
-                g.ReferenceShader = (Shader)EditorGUILayout.ObjectField("Shader", g.ReferenceShader, typeof(Shader), false);
-                EditorGUI.EndDisabledGroup();
-
-                EditorGUIUtility.labelWidth = labelWidth;
-                EditorGUILayout.EndVertical();
-
-                EditorGUILayout.BeginVertical();
-
-                for (int g_m_i = 0; g_m_i < g.Materials.Count; g_m_i++) {
-                    var material = g.Materials.ElementAt(g_m_i);
-                    EditorGUILayout.BeginHorizontal();
-
-                    EditorGUI.BeginDisabledGroup(true);
-                    EditorGUILayout.ObjectField(material, typeof(Material), false);
-                    EditorGUI.EndDisabledGroup();
-
-
-                    EditorGUI.BeginDisabledGroup(g_i == 0);
-                    if (GUILayout.Button("Up")) {
-                        Atlasser.MoveMaterial(material, g_i - 1);
-                    }
-                    EditorGUI.EndDisabledGroup();
-
-                    if (GUILayout.Button("Down")) {
-                        Atlasser.MoveMaterial(material, g_i + 1);
-                    }
-                    EditorGUILayout.EndHorizontal();
-                }
-
-                EditorGUILayout.EndVertical();
-                EditorGUILayout.EndHorizontal();
-            }
-            EditorGUI.indentLevel--;
-        });
+        _flow.Get<Atlasser>().OnGUI(_selectedObject);
 
         // ========= //
         // ShapeKeys //
